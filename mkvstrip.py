@@ -37,14 +37,15 @@ Codacy: https://app.codacy.com/app/willforde/mkvstrip/dashboard
 
 __version__ = "1.0.2"
 
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
 from functools import lru_cache
 from operator import itemgetter
-import subprocess
-import argparse
-import time
-import json
-import sys
-import os
+from pprint import pprint
 
 # Global parser namespace
 cli_args = None
@@ -57,13 +58,14 @@ else:
 
 def catch_interrupt(func):
     """Decorator to catch Keyboard Interrupts and silently exit."""
+
     def wrapper(*args, **kwargs):
         try:
             func(*args, **kwargs)
         except KeyboardInterrupt:  # pragma: no cover
             pass
 
-    # The function been catched
+    # The function been caught
     return wrapper
 
 
@@ -86,20 +88,20 @@ def walk_directory(path):
     elif os.path.isdir(path):
         dirs = []
         # Walk through the directory
-        for dirpath, _, filenames in os.walk(path):
+        for dir_path, _, filenames in os.walk(path):
             files = []
             for filename in filenames:
                 if filename.lower().endswith(".mkv"):
                     files.append(filename)
 
             # Sort list of files and add to directory list
-            dirs.append((dirpath, sorted(files)))
+            dirs.append((dir_path, sorted(files)))
 
-        # Sort the list of directorys & files and process them
-        for dirpath, filenames in sorted(dirs, key=itemgetter(0)):
+        # Sort the list of directories & files and process them
+        for dir_path, filenames in sorted(dirs, key=itemgetter(0)):
             for filename in filenames:
-                fullpath = os.path.join(dirpath, filename)
-                movie_list.append(fullpath)
+                full_path = os.path.join(dir_path, filename)
+                movie_list.append(full_path)
     else:
         raise FileNotFoundError("[Errno 2] No such file or directory: '%s'" % path)
 
@@ -128,9 +130,9 @@ def remux_file(command):
         process = subprocess.Popen(command, stdout=subprocess.PIPE, universal_newlines=True)
 
         # Display Percentage until subprocess has finished
-        retcode = process.poll()
-        while retcode is None:
-            # Sleep for a quarter second and then dislay progress
+        ret_code = process.poll()
+        while ret_code is None:
+            # Sleep for a quarter second and then display progress
             time.sleep(.25)
             for line in iter(process.stdout.readline, ""):
                 if "progress" in line.lower():
@@ -138,12 +140,12 @@ def remux_file(command):
                     sys.stdout.flush()
 
             # Check return code of subprocess
-            retcode = process.poll()
+            ret_code = process.poll()
 
         # Check if return code indicates an error
         sys.stdout.write("\n")
-        if retcode:
-            raise subprocess.CalledProcessError(retcode, command, output=process.stdout)
+        if ret_code:
+            raise subprocess.CalledProcessError(ret_code, command, output=process.stdout)
 
     except subprocess.CalledProcessError as e:
         print("Remux failed!")
@@ -179,6 +181,7 @@ class AppendSplitter(argparse.Action):
     Custom action to split multiple parameters which are
     separated by a comma, and append then to a default list.
     """
+
     def __call__(self, _, namespace, values, option_string=None):
         items = self.default if isinstance(self.default, list) else []
         items.extend(values.split(","))
@@ -190,6 +193,7 @@ class RealPath(argparse.Action):
     Custom action to convert given path to a full canonical path,
     eliminating any symbolic links if encountered.
     """
+
     def __call__(self, _, namespace, value, option_string=None):
         setattr(namespace, self.dest, os.path.realpath(value))
 
@@ -200,6 +204,7 @@ class Track(object):
 
     :param dict track_data: The track data given by mkvmerge.
     """
+
     def __init__(self, track_data):
         self.lang = track_data["properties"].get("language", "und")
         self.codec = track_data["codec"]
@@ -217,14 +222,15 @@ class MKVFile(object):
 
     :param str path: Path to the Matroska file to process.
     """
+
     def __init__(self, path):
-        self.dirpath, self.filename = os.path.split(path)
+        self.dir_path, self.filename = os.path.split(path)
         self.subtitle_tracks = []
         self.video_tracks = []
         self.audio_tracks = []
         self.path = path
 
-        # Commandline auguments for extracting info about the mkv file
+        # Commandline arguments for extracting info about the mkv file
         command = [cli_args.mkvmerge_bin, "-i", "-F", "json", path]
 
         # Ask mkvmerge for the json info
@@ -308,16 +314,22 @@ class MKVFile(object):
         print("============================")
 
         # Output the remuxed file to a temp tile, This will protect
-        # the original file from been currupted if anything goes wrong
+        # the original file from been corrupted if anything goes wrong
         tmp_file = u"%s.tmp" % self.path
+        # Write to a secondary location for the output in case you're working
+        # with a HDD as this will significantly increase speeds if you separate
+        # write and read destinations while working
+        if cli_args.temp_path != "":
+            tmp_file = cli_args.temp_path + self.path + ".tmp"
+        pprint(tmp_file)
         command.append(tmp_file)
         command.extend(["--title", self.filename[:-4]])
 
-        # Iterate all tracks and mark which tracks are to be kepth
+        # Iterate all tracks and mark which tracks are to be kept
         for track_type in ("audio", "subtitle"):
             keep, remove = self._filtered_tracks(track_type)
             if ((track_type == "subtitle" and cli_args.no_subtitles)
-                    or keep) and remove:
+                or keep) and remove:
                 keep_ids = []
 
                 print("Retaining %s track(s):" % track_type)
@@ -328,7 +340,7 @@ class MKVFile(object):
                     # Set the first track as default
                     command.extend(["--default-track", ":".join((str(track.id), "0" if count else "1"))])
 
-                # Set which tracks are to be kepth
+                # Set which tracks are to be kept
                 if keep_ids:
                     command.extend(["--%s-tracks" % track_type,
                                     ",".join(keep_ids)])
@@ -365,7 +377,7 @@ def main(params=None):
     parser = argparse.ArgumentParser(description="Strips unnecessary tracks from MKV files.")
     parser.add_argument("paths", nargs='+',
                         help="Where your MKV files are stored. Can be a directories or files.")
-    parser.add_argument("-t", "--dry-run", action="store_true", help="Enable mkvmerge dry run for testing.")
+    parser.add_argument("-d", "--dry-run", action="store_true", help="Enable mkvmerge dry run for testing.")
     parser.add_argument("-b", "--mkvmerge-bin", default=BIN_DEFAULT,
                         action="store", metavar="path",
                         help="The path to the MKVMerge executable.")
@@ -385,9 +397,13 @@ def main(params=None):
                              " retain, strip all subtitles.")
     parser.add_argument("-v", "--verbose", action="store_true",
                         default=False, help="Verbose output.")
+    parser.add_argument("-t", "--temp-path", default="",
+                        help="Path to write temporary files to. This avoids reading and writing from the same source and can significantly speed up processing speeds.")
 
     # Parse the list of given arguments
-    globals()["cli_args"] = parser.parse_args(params)
+    temp_results = parser.parse_args(params)
+    pprint(temp_results)
+    globals()["cli_args"] = temp_results
 
     # Iterate over all found mkv files
     print("Searching for MKV files to process.")
