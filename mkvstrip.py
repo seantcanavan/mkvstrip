@@ -170,6 +170,8 @@ def replace_file(tmp_file, org_file):
     # Overwrite original file
     try:
         os.unlink(org_file)
+        print("moving from " + tmp_file)
+        print("moving to " + org_file)
         shutil.move(tmp_file, org_file)
     except EnvironmentError as e:
         os.unlink(tmp_file)
