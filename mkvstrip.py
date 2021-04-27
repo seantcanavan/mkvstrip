@@ -40,6 +40,7 @@ __version__ = "1.0.2"
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -169,7 +170,7 @@ def replace_file(tmp_file, org_file):
     # Overwrite original file
     try:
         os.unlink(org_file)
-        os.rename(tmp_file, org_file)
+        shutil.move(tmp_file, org_file)
     except EnvironmentError as e:
         os.unlink(tmp_file)
         print("Renaming failed: %s => %s" % (tmp_file, org_file))
