@@ -213,9 +213,63 @@ class Track(object):
         self.codec = track_data["codec"]
         self.type = track_data["type"]
         self.id = track_data["id"]
+        self.properties = track_data["properties"]
 
     def __str__(self):
-        return "Track #{}: {} - {}".format(self.id, self.lang, self.codec)
+        return f"Track: {self.id}: Lang: {self.lang} Codec: {self.codec} Type: {self.type} Properties: {self.properties}"
+
+    def get_formatted_name(self):
+        """Generate formatted track name based on track type and properties."""
+        if self.type == "audio":
+            # Get audio channels
+            channels = self.properties.get("audio_channels", "")
+            channels_map = {
+                "1": "1",
+                "2": "2",
+                "6": "5.1",
+                "8": "7.1"
+            }
+            channel_str = channels_map.get(str(channels), f"{channels} channels")
+
+            # Format audio codec name
+            codec_name = self.codec.upper()
+
+            # Get language name
+            lang_name = self._get_language_name()
+            new_audio_name = f"Audio {lang_name} {codec_name} {channel_str}"
+            print(f"renaming Track {self} to {new_audio_name}")
+
+            return new_audio_name
+
+        elif self.type == "subtitles":
+            # Format subtitle codec name
+            codec_name = self.codec.upper()
+
+            # Get language name
+            lang_name = self._get_language_name()
+
+            new_subtitles_name = f"Subtitles {lang_name} {codec_name}"
+            print(f"renaming Track {self} to {new_subtitles_name}")
+
+            return new_subtitles_name
+
+        return ""
+
+    def _get_language_name(self):
+        """Convert ISO language code to full name."""
+        language_map = {
+            "eng": "English",
+            "fre": "French",
+            "ger": "German",
+            "ita": "Italian",
+            "spa": "Spanish",
+            "jpn": "Japanese",
+            "chi": "Chinese",
+            "kor": "Korean",
+            "rus": "Russian",
+            # Add more languages as needed
+        }
+        return language_map.get(self.lang, self.lang.upper())
 
 
 class MKVFile(object):
@@ -310,21 +364,16 @@ class MKVFile(object):
             return False
 
     def remove_tracks(self):
-        """Remove the unwanted tracks."""
+        """Remove the unwanted tracks and rename remaining tracks."""
         # The command line args required to remux the mkv file
         command = [cli_args.mkvmerge_bin, "--output"]
         print("\nRemuxing:", self.filename)
         print("============================")
 
-        # Output the remuxed file to a temp tile, This will protect
-        # the original file from been corrupted if anything goes wrong
+        # Output the remuxed file to a temp tile
         tmp_file = u"%s.tmp" % self.path
-        # Write to a secondary location for the output in case you're working
-        # with a HDD as this will significantly increase speeds if you separate
-        # write and read destinations while working
         if cli_args.temp_path != "":
             tmp_file = cli_args.temp_path + self.path + ".tmp"
-        pprint(tmp_file)
         command.append(tmp_file)
         command.extend(["--title", self.filename[:-4]])
 
@@ -335,10 +384,15 @@ class MKVFile(object):
                 or keep) and remove:
                 keep_ids = []
 
-                print("Retaining %s track(s):" % track_type)
+                print(f"Retaining {track_type} track(s):")
                 for count, track in enumerate(keep):
                     keep_ids.append(str(track.id))
                     print("   ", track)
+
+                    # Add track name
+                    track_name = track.get_formatted_name()
+                    if track_name:
+                        command.extend(["--track-name", f"{track.id}:{track_name}"])
 
                     # Set the first track as default
                     command.extend(["--default-track", ":".join((str(track.id), "0" if count else "1"))])
@@ -350,8 +404,7 @@ class MKVFile(object):
                 elif track_type == "subtitle":
                     command.extend(["--no-subtitles"])
 
-                # This is just here to report what tracks will be removed
-                print("Removing %s track(s):" % track_type)
+                print(f"Removing {track_type} track(s):")
                 for track in remove:
                     print("   ", track)
 
