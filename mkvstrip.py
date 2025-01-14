@@ -239,9 +239,15 @@ class MKVFile(object):
 
         # Ask mkvmerge for the json info
         process = subprocess.Popen(command, stdout=subprocess.PIPE, universal_newlines=True)
-        stdout, _ = process.communicate(timeout=10)
-        if process.returncode:
-            raise RuntimeError("[Error {}] mkvmerge failed to identify: {}".format(process.returncode, self.filename))
+        success = False
+        while not success:
+            try:
+                stdout, _ = process.communicate(timeout=100)
+                if process.returncode:
+                    raise RuntimeError("[Error {}] mkvmerge failed to identify: {}".format(process.returncode, self.filename))
+                success = True
+            except subprocess.TimeoutExpired as te:
+                print(f"TimeoutExpired: {te} for MKVFile {self} at {path}")
 
         # Process the json response
         json_data = json.loads(stdout)
