@@ -232,6 +232,7 @@ class MKVFile(object):
         self.video_tracks = []
         self.audio_tracks = []
         self.path = path
+        self.has_tracks = False
 
         # Commandline arguments for extracting info about the mkv file
         command = [cli_args.mkvmerge_bin, "-i", "-F", "json", path]
@@ -245,6 +246,11 @@ class MKVFile(object):
         # Process the json response
         json_data = json.loads(stdout)
         track_map = {"video": self.video_tracks, "audio": self.audio_tracks, "subtitles": self.subtitle_tracks}
+        if "tracks" not in json_data.keys():
+            return
+
+        self.has_tracks = True
+
         for track_data in json_data["tracks"]:
             track_obj = Track(track_data)
             track_map[track_obj.type].append(track_obj)
@@ -390,8 +396,8 @@ def main(params=None):
                              "(like \"fre\" for French), or such a language code followed by a dash and a country code "
                              "for specialities in languages (like \"fre-ca\" for Canadian French). "
                              "Country codes are the same as used for internet domains.")
-    parser.add_argument("-s", "--subs-language", metavar="subs-lang", action=AppendSplitter, required=False,
-                        dest="subs_language", default=None,
+    parser.add_argument("-s", "--subs-language", default=["und"], metavar="subs-lang", action=AppendSplitter, required=False,
+                        dest="subs_language",
                         help="If specified, defines subtitle languages to retain. See description of --language "
                              "for syntax.")
     parser.add_argument("-n", "--no-subtitles", default=False,
@@ -417,7 +423,7 @@ def main(params=None):
             if cli_args.verbose:
                 print("Checking", mkv_file)
             mkv_obj = MKVFile(mkv_file)
-            if mkv_obj.remux_required:
+            if mkv_obj.has_tracks and mkv_obj.remux_required:
                 mkv_obj.remove_tracks()
 
 
